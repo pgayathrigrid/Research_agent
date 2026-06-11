@@ -1,29 +1,32 @@
 # Research Agent Prototype
 
-An educational research agent that searches arXiv, filters papers, displays results, and generates Markdown or PDF research reports.
+An educational research agent that expands a user topic before searching arXiv, then generates Markdown or PDF research reports.
 
-## Architecture
+## LLM Choice
+
+The default LLM is `gemini-2.5-flash`.
+
+Why this model:
+
+- The LLM step is keyword expansion and terminology extraction, not full deep research.
+- It is a better fit for low-latency, lower-cost structured text work than a frontier or deep-research model.
+- The tool is isolated behind `LLMTool`, so the model can be changed with `RESEARCH_AGENT_LLM_MODEL`.
+- If `GEMINI_API_KEY` is not set, `LLMTool` falls back to deterministic rule-based extraction so the prototype still runs locally.
+
+## Updated Architecture
 
 ```text
-User Query
+User Topic
   -> ResearchWorkflow
   -> ResearchAgent
+  -> WebSearchTool
+  -> LLMTool
+  -> Keyword Expansion
+  -> QueryBuilder
   -> ArxivTool
-  -> Paper Retrieval
   -> ReportGenerator
   -> Research Report
 ```
-
-## Design Decisions
-
-- `models.py` contains shared data models such as `Paper`, `SortMode`, `DateFilter`, and `ReportMetadata`.
-- `arxiv_tool.py` owns arXiv-specific retrieval, sort mapping, and publication-date filtering.
-- `report_generator.py` owns all Markdown and PDF report generation.
-- `agent.py` coordinates retrieval and report creation without UI or CLI concerns.
-- `workflow.py` provides the end-to-end application flow used by both Streamlit and the CLI.
-- `streamlit_app.py` contains only UI controls, display code, and download buttons.
-- `cli.py` contains only console argument parsing, console display, and file-output choices.
-- Report analysis is deterministic and rule-based. It does not call OpenAI, Claude, Gemini, or any external LLM.
 
 ## Updated File Structure
 
@@ -32,8 +35,11 @@ research_agent/
   __init__.py
   agent.py
   arxiv_tool.py
+  llm_tool.py
   models.py
+  query_builder.py
   report_generator.py
+  web_search_tool.py
   workflow.py
 cli.py
 streamlit_app.py
@@ -42,34 +48,25 @@ requirements.txt
 README.md
 ```
 
-## Enhancements
+## What The Upgrade Adds
 
-- Date range filtering:
-  - All dates
-  - Last 1 year
-  - Last 2 years
-  - Last 5 years
-  - Custom start and end date
-- Sort options:
-  - Relevance
-  - Publication Date
-- Export options:
-  - Markdown `.md`
-  - PDF `.pdf`
-- Report analysis sections:
-  - Overview
+- `WebSearchTool` gathers concise web titles and snippets for the original topic.
+- `LLMTool` interprets the topic and extracts:
+  - primary terms
+  - related terms
+  - domain terms
+  - synonyms
+  - research keywords
+- `QueryBuilder` converts expanded terminology into an arXiv query.
+- The generated arXiv query is visible in both CLI and Streamlit.
+- Reports now include:
+  - Topic Understanding
+  - Expanded Keywords
+  - Generated Search Query
   - Research Summary
-  - Key Papers
-  - Main Findings
   - Research Gaps
   - Future Directions
-  - References
-- Streamlit UX:
-  - Active filters
-  - Total papers retrieved
-  - Selected sort mode
-  - Markdown and PDF download buttons
-  - Clear success and error messages
+- Existing date filtering, sorting, Markdown export, and PDF export are preserved.
 
 ## Setup
 
@@ -78,36 +75,33 @@ cd /Users/pgayathri/Documents/Research_agent
 python -m pip install -r requirements.txt
 ```
 
-## Console Usage
-
-Interactive:
+Optional LLM setup:
 
 ```bash
-python cli.py
+export GEMINI_API_KEY="your_gemini_api_key"
+export RESEARCH_AGENT_LLM_MODEL="gemini-2.5-flash"
 ```
 
-Markdown export, relevance sort, last 2 years:
+Without `OPENAI_API_KEY`, the app uses deterministic keyword expansion.
+
+## CLI Usage
+
+Basic:
 
 ```bash
-python cli.py "retrieval augmented generation" --max-results 5 --date-filter last_2_years --sort relevance --output reports/rag_report.md
+python cli.py "NV-diamond use-cases for ECG detection"
 ```
 
-PDF export:
+With publication date sorting, date filter, web context, and both exports:
 
 ```bash
-python cli.py "retrieval augmented generation" --max-results 5 --export-format pdf --pdf-output reports/rag_report.pdf
+python cli.py "NV-diamond use-cases for ECG detection" --max-results 5 --web-results 5 --sort publication_date --date-filter last_5_years --export-format both --output reports/nv_ecg.md --pdf-output reports/nv_ecg.pdf
 ```
 
-Markdown and PDF export with custom dates:
+Custom date range:
 
 ```bash
-python cli.py "graph neural networks" --max-results 10 --sort publication_date --date-filter custom --start-date 2024-01-01 --end-date 2026-06-08 --export-format both --output reports/gnn_report.md --pdf-output reports/gnn_report.pdf
-```
-
-The original launcher still works:
-
-```bash
-python research_agent_prototype.py
+python cli.py "quantum sensing cardiac monitoring" --date-filter custom --start-date 2022-01-01 --end-date 2026-06-08 --export-format both
 ```
 
 ## Streamlit Usage
@@ -116,49 +110,45 @@ python research_agent_prototype.py
 python -m streamlit run streamlit_app.py
 ```
 
-Then open:
+Open:
 
 ```text
 http://localhost:8501
 ```
 
-## Example Output Descriptions
+## Example Output
 
-CLI output shows:
+For:
 
 ```text
-Search Settings:
-Sort mode: Publication Date
-Date filter: 2024-01-01 to 2026-06-08
-Total papers retrieved: 5
-
-Top Papers:
-1. Paper title
-Authors: ...
-Published: ...
-Abstract: ...
-URL: ...
+NV-diamond use-cases for ECG detection
 ```
 
-Streamlit shows:
+The workflow may produce:
 
 ```text
-Sidebar:
-- Research topic
-- Number of papers
-- Sort by
-- Publication date filter
-- Custom start/end dates when selected
+Original topic: NV-diamond use-cases for ECG detection
+LLM model: gpt-5.4-mini
+Topic understanding: The topic is interpreted as biomedical quantum sensing using nitrogen-vacancy diamond sensors for cardiac signal detection.
+Expanded keywords: NV diamond, nitrogen vacancy diamond, nitrogen-vacancy center, ECG, electrocardiography, magnetocardiography, quantum sensing, biomedical sensing, cardiac monitoring
+Generated arXiv query:
+(all:"NV diamond" OR all:"nitrogen vacancy diamond")
+AND (all:"ECG" OR all:"electrocardiography" OR all:"magnetocardiography")
+AND (all:"quantum sensing" OR all:"biomedical sensing" OR all:"cardiac monitoring")
+```
 
-Main page:
-- Success message
-- Papers retrieved metric
-- Sort mode metric
-- Date filter metric
-- Retrieved paper expanders
-- Markdown report preview
-- Download Markdown report button
-- Download PDF report button
+Streamlit displays:
+
+```text
+- Original topic
+- LLM model
+- Topic understanding
+- Expanded keywords
+- Generated arXiv query
+- Web search context
+- Retrieved papers
+- Markdown report download
+- PDF report download
 ```
 
 ## Testing
@@ -175,9 +165,9 @@ CLI help:
 python cli.py --help
 ```
 
-Live arXiv retrieval:
+Live retrieval:
 
 ```bash
-python cli.py "retrieval augmented generation" --max-results 1 --export-format both --output /private/tmp/research_agent_test.md --pdf-output /private/tmp/research_agent_test.pdf
+python cli.py "NV-diamond use-cases for ECG detection" --max-results 3 --export-format both --output /private/tmp/nv_ecg.md --pdf-output /private/tmp/nv_ecg.pdf
 ```
-# Prototype_for_ResearchAgent
+# Research_agent
