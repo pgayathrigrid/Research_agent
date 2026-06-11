@@ -97,7 +97,7 @@ class ReportMetadata:
     original_topic: str = ""
     generated_query: str = ""
     topic_understanding: str = ""
-    llm_model: str = "gpt-5.4-mini"
+    llm_model: str = "gpt-4o-mini"
     expanded_keywords: "KeywordExpansion" = field(default_factory=lambda: KeywordExpansion())
     web_results: list["WebSearchResult"] = field(default_factory=list)
 
@@ -151,6 +151,8 @@ class Paper:
     published_date: str
     abstract: str
     url: str
+    relevance_score: float | None = None
+    relevance_reasoning: str | None = None
 
     @property
     def authors_text(self) -> str:

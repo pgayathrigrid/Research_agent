@@ -17,42 +17,51 @@ logger = logging.getLogger(__name__)
 class ReportGenerator:
     """Build and save structured research reports."""
 
+    @staticmethod
+    def _get_syn(synthesis: dict, key: str, fallback: str) -> str:
+        """Extract synthesis strings, safely joining lists if the LLM hallucinated an array."""
+        val = synthesis.get(key)
+        if not val:
+            return fallback
+        if isinstance(val, list):
+            return "\n".join(f"- {str(item)}" for item in val)
+        return str(val)
+
     def generate(
         self,
         topic: str,
         papers: list[Paper],
         metadata: ReportMetadata | None = None,
+        synthesis: dict | None = None,
     ) -> str:
-        """Create a readable report from retrieved papers.
-
-        This prototype does not call an LLM. Summary and analysis sections are
-        deterministic, extractive, and rule-based so the workflow remains
-        transparent and dependency-light.
-        """
+        """Create a readable report from retrieved papers."""
         metadata = metadata or ReportMetadata()
+        synthesis = synthesis or {}
+        
         overview = self._build_overview(topic, papers)
-        research_summary = self._build_research_summary(papers)
+        executive_summary = self._get_syn(synthesis, "executive_summary", self._build_research_summary(papers))
         key_papers = self._build_key_papers(papers)
-        main_findings = self._build_main_findings(papers)
-        research_gaps = self._build_research_gaps(papers)
-        future_directions = self._build_future_directions(papers)
+        key_findings = self._get_syn(synthesis, "key_findings", self._build_key_findings(papers))
+        research_gaps = self._get_syn(synthesis, "research_gaps", self._build_research_gaps(papers))
+        future_directions = self._get_syn(synthesis, "future_directions", self._build_future_directions(papers))
         references = self._build_references(papers)
 
         return "\n\n".join(
             [
                 f"# Research Report: {topic}",
-                f"## Topic\n{topic}",
-                f"## Search Settings\n{self._build_search_settings(metadata)}",
                 f"## Topic Understanding\n{self._build_topic_understanding(metadata)}",
-                f"## Expanded Keywords\n{self._build_expanded_keywords(metadata)}",
-                f"## Generated Search Query\n{metadata.generated_query or topic}",
-                f"## Overview\n{overview}",
-                f"## Research Summary\n{research_summary}",
-                f"## Key Papers\n{key_papers}",
-                f"## Main Findings\n{main_findings}",
+                f"## Executive Summary\n{executive_summary}",
+                f"## Key Findings\n{key_findings}",
                 f"## Research Gaps\n{research_gaps}",
                 f"## Future Directions\n{future_directions}",
+                f"## Key Papers\n{key_papers}",
                 f"## References\n{references}",
+                f"\n---\n",
+                f"<details>\n<summary>Advanced Details / Developer Mode</summary>\n",
+                f"### Search Settings\n{self._build_search_settings(metadata)}\n",
+                f"### Expanded Keywords\n{self._build_expanded_keywords(metadata)}\n",
+                f"### Generated Search Query\n`{metadata.generated_query or topic}`\n",
+                f"</details>",
             ]
         )
 
@@ -69,9 +78,11 @@ class ReportGenerator:
         topic: str,
         papers: list[Paper],
         metadata: ReportMetadata | None = None,
+        synthesis: dict | None = None,
     ) -> bytes:
-        """Create a clean PDF report from the same deterministic analysis."""
+        """Create a clean PDF report from the same analysis."""
         metadata = metadata or ReportMetadata()
+        synthesis = synthesis or {}
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
@@ -85,11 +96,11 @@ class ReportGenerator:
         self._pdf_section(pdf, "Expanded Keywords", self._plain_text(self._build_expanded_keywords(metadata)))
         self._pdf_section(pdf, "Generated Search Query", metadata.generated_query or topic)
         self._pdf_section(pdf, "Overview", self._plain_text(self._build_overview(topic, papers)))
-        self._pdf_section(pdf, "Research Summary", self._plain_text(self._build_research_summary(papers)))
+        self._pdf_section(pdf, "Executive Summary", self._plain_text(self._get_syn(synthesis, "executive_summary", self._build_research_summary(papers))))
         self._pdf_section(pdf, "Key Papers", self._plain_text(self._build_key_papers(papers)))
-        self._pdf_section(pdf, "Main Findings", self._plain_text(self._build_main_findings(papers)))
-        self._pdf_section(pdf, "Research Gaps", self._plain_text(self._build_research_gaps(papers)))
-        self._pdf_section(pdf, "Future Directions", self._plain_text(self._build_future_directions(papers)))
+        self._pdf_section(pdf, "Key Findings", self._plain_text(self._get_syn(synthesis, "key_findings", self._build_key_findings(papers))))
+        self._pdf_section(pdf, "Research Gaps", self._plain_text(self._get_syn(synthesis, "research_gaps", self._build_research_gaps(papers))))
+        self._pdf_section(pdf, "Future Directions", self._plain_text(self._get_syn(synthesis, "future_directions", self._build_future_directions(papers))))
         self._pdf_section(pdf, "References", self._plain_text(self._build_references(papers)))
 
         return bytes(pdf.output(dest="S"))
@@ -184,7 +195,7 @@ class ReportGenerator:
         return "\n".join(lines)
 
     @staticmethod
-    def _build_main_findings(papers: list[Paper]) -> str:
+    def _build_key_findings(papers: list[Paper]) -> str:
         if not papers:
             return "No findings could be generated because no papers were retrieved."
 

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 from research_agent.agent import ResearchAgent
 from research_agent.models import DateFilter, KeywordExpansion, Paper, ReportMetadata, SortMode, WebSearchResult
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -21,6 +24,7 @@ class ResearchResult:
     web_results: list[WebSearchResult]
     keyword_expansion: KeywordExpansion
     generated_query: str
+    synthesis: dict
 
 
 class ResearchWorkflow:
@@ -43,12 +47,28 @@ class ResearchWorkflow:
         keyword_expansion = self.agent.expand_keywords(topic, web_results)
         generated_query = self.agent.build_query(topic, keyword_expansion)
 
-        papers = self.agent.retrieve_papers(
+        candidate_count = min(max_results * 3, 20)
+        candidates = self.agent.retrieve_papers(
             generated_query,
-            max_results=max_results,
+            max_results=candidate_count,
             sort_mode=sort_mode,
             date_filter=date_filter,
         )
+        logger.info("Retrieved %d candidate papers.", len(candidates))
+        
+        evaluated_papers = self.agent.evaluate_papers(topic, candidates)
+        logger.info("Evaluated %d papers.", len(evaluated_papers))
+        
+        # Sort all evaluated papers by relevance score (descending)
+        evaluated_papers.sort(key=lambda p: getattr(p, "relevance_score", 0.0) or 0.0, reverse=True)
+        
+        top_scores = [getattr(p, "relevance_score", 0.0) for p in evaluated_papers[:max_results]]
+        logger.info("Top relevance scores after sorting: %s", top_scores)
+        
+        # Select the top max_results papers
+        papers = evaluated_papers[:max_results]
+        logger.info("Selected %d papers for the final report.", len(papers))
+
         metadata = ReportMetadata(
             sort_mode=sort_mode,
             date_filter=date_filter,
@@ -61,8 +81,11 @@ class ResearchWorkflow:
             expanded_keywords=keyword_expansion,
             web_results=web_results,
         )
-        report_markdown = self.agent.create_report(topic, papers, metadata=metadata)
-        report_pdf = self.agent.create_pdf_report(topic, papers, metadata=metadata)
+        
+        synthesis = self.agent.synthesize_report(topic, papers)
+        
+        report_markdown = self.agent.create_report(topic, papers, metadata=metadata, synthesis=synthesis)
+        report_pdf = self.agent.create_pdf_report(topic, papers, metadata=metadata, synthesis=synthesis)
         return ResearchResult(
             topic=topic,
             papers=papers,
@@ -72,6 +95,7 @@ class ResearchWorkflow:
             web_results=web_results,
             keyword_expansion=keyword_expansion,
             generated_query=generated_query,
+            synthesis=synthesis,
         )
 
     def run_and_save(

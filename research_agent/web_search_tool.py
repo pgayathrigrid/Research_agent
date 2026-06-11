@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from urllib.parse import quote_plus
+from urllib.parse import urlparse, parse_qs
 
 import requests
 from bs4 import BeautifulSoup
@@ -56,7 +57,15 @@ class WebSearchTool:
 
             title = title_link.get_text(" ", strip=True)
             snippet = snippet_node.get_text(" ", strip=True) if snippet_node else ""
-            href = title_link.get("href", "")
+            raw_href = title_link.get("href", "")
+            
+            # Clean DuckDuckGo redirect URLs if present
+            if raw_href.startswith("/l/?kh="):
+                parsed_query = parse_qs(urlparse(raw_href).query)
+                href = parsed_query.get("uddg", [raw_href])[0]
+            else:
+                href = raw_href
+
             if title:
                 parsed_results.append(WebSearchResult(title=title, snippet=snippet, url=href))
 

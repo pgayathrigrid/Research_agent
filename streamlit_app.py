@@ -48,6 +48,9 @@ def render_paper(paper, index: int) -> None:
     with st.expander(f"{index}. {paper.title}", expanded=index == 1):
         st.write(f"**Authors:** {paper.authors_text}")
         st.write(f"**Published:** {paper.published_date}")
+        if getattr(paper, "relevance_score", None) is not None:
+            st.write(f"**Relevance:** {paper.relevance_score}/10")
+            st.write(f"**Why this matters:** {getattr(paper, 'relevance_reasoning', '')}")
         st.write(f"**Abstract:** {paper.short_abstract(500)}")
         st.link_button("Open arXiv page", paper.url)
 
@@ -95,22 +98,19 @@ def main() -> None:
         return
 
     st.success("Research report generated.")
-    metric_one, metric_two, metric_three = st.columns(3)
-    metric_one.metric("Papers retrieved", len(result.papers))
-    metric_two.metric("Sort mode", result.metadata.sort_mode.label)
-    metric_three.metric("Date filter", result.metadata.date_filter.label)
+    
+    with st.expander("Advanced Details (Developer Mode)", expanded=False):
+        metric_one, metric_two, metric_three = st.columns(3)
+        metric_one.metric("Papers retrieved", len(result.papers))
+        metric_two.metric("Sort mode", result.metadata.sort_mode.label)
+        metric_three.metric("Date filter", result.metadata.date_filter.label)
+        st.write(f"**LLM model:** {result.metadata.llm_model}")
+        st.write("**Expanded keywords:**")
+        st.write(", ".join(result.keyword_expansion.all_terms()) or "No expanded keywords generated.")
+        st.write("**Generated arXiv query:**")
+        st.code(result.generated_query, language="text")
 
-    st.subheader("Retrieval Transparency")
-    st.write(f"**Original topic:** {result.topic}")
-    st.write(f"**LLM model:** {result.metadata.llm_model}")
-    st.write("**Topic understanding:**")
-    st.write(result.keyword_expansion.topic_understanding or "No topic interpretation generated.")
-    st.write("**Expanded keywords:**")
-    st.write(", ".join(result.keyword_expansion.all_terms()) or "No expanded keywords generated.")
-    st.write("**Generated arXiv query:**")
-    st.code(result.generated_query, language="text")
-
-    with st.expander("Web search context", expanded=False):
+        st.write("**Web search context:**")
         if not result.web_results:
             st.info("No web context was retrieved. The agent used deterministic topic extraction only.")
         for item in result.web_results:
@@ -119,30 +119,74 @@ def main() -> None:
             if item.url:
                 st.caption(item.url)
 
-    papers_column, report_column = st.columns([1, 1])
+    st.header("Research Context")
+    with st.container(border=True):
+        st.write(f"**Original topic:** {result.topic}")
+        st.write(f"**Topic understanding:** {result.keyword_expansion.topic_understanding or 'No topic interpretation generated.'}")
+        if "executive_summary" in result.synthesis:
+            st.subheader("Executive Summary")
+            st.write(result.synthesis["executive_summary"])
 
-    with papers_column:
-        st.subheader("Retrieved Papers")
-        if not result.papers:
-            st.warning("No papers found.")
-        for index, paper in enumerate(result.papers, start=1):
-            render_paper(paper, index)
+    st.header("Retrieved Papers")
+    if not result.papers:
+        st.warning("No papers found.")
+    for index, paper in enumerate(result.papers, start=1):
+        render_paper(paper, index)
 
-    with report_column:
-        st.subheader("Research Report")
-        st.markdown(result.report_markdown)
-        st.download_button(
-            label="Download Markdown report",
-            data=result.report_markdown,
-            file_name="research_report.md",
-            mime="text/markdown",
-        )
-        st.download_button(
-            label="Download PDF report",
-            data=result.report_pdf,
-            file_name="research_report.pdf",
-            mime="application/pdf",
-        )
+    st.header("Research Report")
+    
+    if "error" in result.synthesis:
+        st.error(result.synthesis["error"])
+    elif not result.synthesis:
+        st.warning("⚠️ The LLM failed to generate the report synthesis. This is typically caused by hitting the Gemini API rate limit (15 requests/minute) or daily quota. Please wait a minute and try again, and check your terminal logs for exact errors.")
+
+    if "key_findings" in result.synthesis:
+        with st.container(border=True):
+            st.subheader("Key Findings")
+            # Format lists if the LLM returned an array
+            val = result.synthesis["key_findings"]
+            if isinstance(val, list):
+                st.write("\n".join(f"- {str(item)}" for item in val))
+            else:
+                st.write(str(val))
+
+    if "research_gaps" in result.synthesis:
+        with st.container(border=True):
+            st.subheader("Research Gaps")
+            val = result.synthesis["research_gaps"]
+            if isinstance(val, list):
+                st.write("\n".join(f"- {str(item)}" for item in val))
+            else:
+                st.write(str(val))
+
+    if "future_directions" in result.synthesis:
+        with st.container(border=True):
+            st.subheader("Future Directions")
+            val = result.synthesis["future_directions"]
+            if isinstance(val, list):
+                st.write("\n".join(f"- {str(item)}" for item in val))
+            else:
+                st.write(str(val))
+
+    with st.container(border=True):
+        st.subheader("Full Report Export")
+        dl_col1, dl_col2 = st.columns(2)
+        with dl_col1:
+            st.download_button(
+                label="Download Markdown report",
+                data=result.report_markdown,
+                file_name="research_report.md",
+                mime="text/markdown",
+                use_container_width=True,
+            )
+        with dl_col2:
+            st.download_button(
+                label="Download PDF report",
+                data=result.report_pdf,
+                file_name="research_report.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
 
 
 if __name__ == "__main__":

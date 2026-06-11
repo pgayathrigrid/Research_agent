@@ -12,47 +12,18 @@ class QueryBuilder:
 
     def build(self, topic: str, keywords: KeywordExpansion) -> str:
         """Return an arXiv-compatible query string."""
-        primary = self._select_core_terms(topic, keywords)
-        context_terms = self._select_context_terms(keywords)
-
-        groups = [
-            self._or_group(primary),
-            self._or_group(context_terms),
-        ]
-        return " AND ".join(group for group in groups if group)
-
-    @staticmethod
-    def _select_core_terms(topic: str, keywords: KeywordExpansion) -> list[str]:
-        """Prefer concrete scientific object terms over the raw user phrase."""
-        all_terms = keywords.all_terms()
-        core_markers = ["nv", "nitrogen", "vacancy", "diamond", "graphene", "transformer", "neural"]
-        selected = [
-            term
-            for term in all_terms
-            if any(marker in term.lower() for marker in core_markers)
-        ]
-        return selected[:5] or keywords.primary_terms[:4] or [topic]
-
-    @staticmethod
-    def _select_context_terms(keywords: KeywordExpansion) -> list[str]:
-        """Select research context terms that broaden the core concept usefully."""
-        all_terms = keywords.all_terms()
-        context_markers = [
-            "ecg",
-            "electrocardiography",
-            "magnetocardiography",
-            "cardiac",
-            "biomedical",
-            "sensing",
-            "sensor",
-            "magnetometry",
-        ]
-        selected = [
-            term
-            for term in all_terms
-            if any(marker in term.lower() for marker in context_markers)
-        ]
-        return selected[:8] or (keywords.related_terms + keywords.domain_terms)[:8]
+        # The LLM has already identified the most important terms. Trust its output.
+        primary = keywords.primary_terms
+        context = keywords.related_terms + keywords.domain_terms
+ 
+        primary_group = self._or_group(primary)
+        context_group = self._or_group(context)
+ 
+        if primary_group and context_group:
+            return f"({primary_group} AND {context_group})"
+ 
+        # Fallback to a simpler query if one of the groups is empty, or use the original topic.
+        return primary_group or context_group or self._or_group([topic])
 
     def _or_group(self, terms: list[str]) -> str:
         clean_terms = [self._term(term) for term in terms if term.strip()]

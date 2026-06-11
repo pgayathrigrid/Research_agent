@@ -63,12 +63,20 @@ class ResearchAgent:
             date_filter=date_filter,
         )
 
-    def create_report(self, topic: str, papers: list[Paper], metadata=None) -> str:
+    def evaluate_papers(self, topic: str, papers: list[Paper]) -> list[Paper]:
+        """Evaluate papers for relevance using the LLM."""
+        return self.llm_tool.evaluate_papers(topic, papers)
+
+    def synthesize_report(self, topic: str, papers: list[Paper]) -> dict:
+        """Synthesize a report answering the topic based on papers."""
+        return self.llm_tool.synthesize_report(topic, papers)
+
+    def create_report(self, topic: str, papers: list[Paper], metadata=None, synthesis: dict | None = None) -> str:
         """Generate a Markdown report from retrieved papers."""
         logger.debug("ResearchAgent generating report for %r", topic)
-        return self.report_generator.generate(topic, papers, metadata=metadata)
+        return self.report_generator.generate(topic, papers, metadata=metadata, synthesis=synthesis)
 
-    def create_pdf_report(self, topic: str, papers: list[Paper], metadata=None) -> bytes:
+    def create_pdf_report(self, topic: str, papers: list[Paper], metadata=None, synthesis: dict | None = None) -> bytes:
         """Generate a PDF report from retrieved papers."""
         logger.debug("ResearchAgent generating PDF report for %r", topic)
-        return self.report_generator.generate_pdf(topic, papers, metadata=metadata)
+        return self.report_generator.generate_pdf(topic, papers, metadata=metadata, synthesis=synthesis)
