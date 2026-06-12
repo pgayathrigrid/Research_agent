@@ -305,17 +305,25 @@ Return ONLY valid JSON with this exact schema:
 
     @staticmethod
     def _extract_json(output_text: str) -> dict:
-        try:
-            # Attempt direct parsing first
-            return json.loads(output_text, strict=False)
-        except json.JSONDecodeError:
-            pass
-            
-        # Fallback to regex extraction if there are markdown backticks
         match = re.search(r"\{.*\}", output_text, flags=re.DOTALL)
-        if not match:
+        if match:
+            output_text = match.group(0)
+        else:
             raise ValueError("LLM response did not contain JSON.")
-        return json.loads(match.group(0), strict=False)
+
+        # Iteratively fix JSON backslash escape errors using the parser's own error positions
+        for _ in range(20):
+            try:
+                return json.loads(output_text, strict=False)
+            except json.JSONDecodeError as e:
+                if "Invalid \\escape" in e.msg or "Invalid \\u" in e.msg:
+                    pos = output_text.rfind('\\', 0, e.pos + 1)
+                    if pos != -1:
+                        output_text = output_text[:pos] + '\\' + output_text[pos:]
+                        continue
+                raise ValueError(f"LLM response did not contain valid JSON: {e}")
+                
+        raise ValueError("Failed to parse JSON after multiple recovery attempts.")
 
     @staticmethod
     def _expand_with_rules(topic: str, web_results: list[WebSearchResult]) -> KeywordExpansion:
